@@ -9,6 +9,7 @@ import pandas
 import numpy as np
 
 #-------------FUNCTIONS-----------
+
 #Initialisation
 def Init(case,pmw_gen=5):
     net = case
@@ -81,13 +82,22 @@ def isThereViolation(net,plot=False):
     #Connect the generator to the network at bus "node". plot the line
 def ConnexionGen(net, node,p_mw=5, plot=True): 
     net.gen['p_mw'][37] = p_mw
-    x_nod = float(net['bus_geodata']['x'][net['bus_geodata'].index==node])
-    y_nod = float(net['bus_geodata']['y'][net['bus_geodata'].index==node])
+    x_nod = float(net.bus_geodata['x'][net.bus_geodata.index==node])
+    y_nod = float(net.bus_geodata['y'][net.bus_geodata.index==node])
     x_gen, y_gen = -3.534,1.813 #Determine on QGis
     len_con = np.sqrt((x_gen-x_nod)**2+(y_gen-y_nod)**2)
     pp.create_line(net,200,node,length_km=len_con,std_type="243-AL1/39-ST1A 20.0") #generator at bus 200
     pp.runpp(net)
-    return isThereViolation(net,plot=plot)
+    return isThereViolation(net,plot=plot),len_con
+
+    #Change the problematic component (for now just lines)
+def ChangeComp(net,id_node,id_line,id_trafo,plot=True):
+    if len(id_line)==1:
+        fromb,tob,lenb = network.line['from_bus'][id_line[0]],network.line['to_bus'][id_line[0]],network.line['length_km'][id_line[0]] #extract data
+        network.line = network.line.drop(id_line[0]) #drop the problematic line
+        pp.create_line(net,fromb,tob,length_km=lenb,std_type="243-AL1/39-ST1A 20.0",index=id_line[0]) #replace it
+    #Need to add trafo and bus case (change line around the bus?) + add a Price count €/km
+    return isThereViolation(network,plot=plot), lenb
 
     #return max power of the added generator for the given network organisation
 def MaxPow(net, p_min = 0, p_max = 150,N=100): 
@@ -116,14 +126,10 @@ print(network)
 #pandapower.to_excel(network, "AC_datas.xlsx")
 pandapower.plotting.simple_plot(network);
 
-# Exemple without problem
-network = Init(pn.case_illinois200())
-pp.runpp(network)
-ConnexionGen(network,16,p_mw = 110)
-print(f'Max Power with this configuration {MaxPow(network)}')
+# Exemple withour problem
+PB,length = ConnexionGen(network,1,p_mw = 110);print(f'Length = {length}km ; Pb_bus={PB[1]} ; Pb_line={PB[2]} ; Pb_trafo={PB[3]}')
+maxg = MaxPow(network); print(f'Max gen power = {maxg}')
 
-#Example with problem
-network = Init(pn.case_illinois200())
-pp.runpp(network)
-ConnexionGen(network,125,p_mw=5)
-print(f'Max Power with this configuration {MaxPow(network)}')
+#Exemple of line changed
+PB,length = ChangeComp(network,Bus,Line,Trafo);print(f'ChangedLength = {length}km ; Pb_bus={PB[1]} ; Pb_line={PB[2]} ; Pb_trafo={PB[3]}')
+maxg = MaxPow(network); print(f'Max gen power = {maxg}')
