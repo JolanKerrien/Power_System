@@ -7,7 +7,6 @@ import pandapower.estimation
 from pandapower.plotting import cmap_continuous, cmap_discrete, create_bus_collection, create_line_collection, draw_collections,create_trafo_collection
 import pandas
 import numpy as np
-import geopandas
 
 #-------------FUNCTIONS-----------
 #Initialisation
