@@ -126,7 +126,7 @@ print(network)
 #pandapower.to_excel(network, "AC_datas.xlsx")
 pandapower.plotting.simple_plot(network);
 
-# Exemple withour problem
+# Exemple with problem
 PB,length = ConnexionGen(network,1,p_mw = 110);print(f'Length = {length}km ; Pb_bus={PB[1]} ; Pb_line={PB[2]} ; Pb_trafo={PB[3]}')
 maxg = MaxPow(network); print(f'Max gen power = {maxg}')
 
