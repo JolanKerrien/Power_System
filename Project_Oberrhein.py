@@ -22,11 +22,11 @@ def Init(pmw_gen=10):
     net.bus_geodata['x'][318], net.bus_geodata['y'][318] = 3408302.042,5367780.101
     net.bus_geodata['x'][58], net.bus_geodata['y'][58] = 3420000.660 , 5369458.703
     #Drop all already in static generators
-    for i,_ in enumerate(net.sgen['p_mw']):
-        net.sgen = net.sgen.drop(i)
+    #for i,_ in enumerate(net.sgen['p_mw']):
+    #    net.sgen = net.sgen.drop(i)
     #Creating the generator
-    x_gen, y_gen = 3406223.643,5364479.401 #Determine on QGis
-    pp.create_bus(net,geodata=(x_gen,y_gen),vn_kv=20.0,min_vm_pu=0.9,max_vm_pu=1.1,name='Bus 179',index=320) #Change the value of vn_kv?
+    x_gen, y_gen = 3410832.464,5368594.558 #Determine on QGis
+    pp.create_bus(net,geodata=(x_gen,y_gen),vn_kv=20.0,min_vm_pu=0.9,max_vm_pu=1.1,name='Bus 179',index=320)
     #Create generator at the created node (200)
     pp.create_gen(net,320,p_mw=pmw_gen) #Change the p_mw, max and min value?
     return net
@@ -88,11 +88,18 @@ def isThereViolation(net,plot=False):
 def ConnexionGen(net, node, plot=True):
     x_nod = float(net.bus_geodata['x'][net.bus_geodata.index==node])
     y_nod = float(net.bus_geodata['y'][net.bus_geodata.index==node])
-    x_gen, y_gen = 3406223.643,5364479.401 #Determine on QGis
+    x_gen, y_gen = 3410832.464,5368594.558 #Determine on QGis
     len_con = np.sqrt((x_gen-x_nod)**2+(y_gen-y_nod)**2)/300 #factor for convergence
-    pp.create_line(net,320,node,length_km=len_con,std_type="490-AL1/64-ST1A 380.0") #generator at bus 320
+    if network.bus.vn_kv[node] == network.bus.vn_kv[320]:
+        pp.create_line(net,320,node,length_km=len_con,std_type="490-AL1/64-ST1A 380.0") #generator at bus 320
+        T = False
+    else:
+        pp.create_bus(net,geodata=(x_gen+0.1,y_gen+0.1),vn_kv=110.0,min_vm_pu=0.9,max_vm_pu=1.1,name='Bus 180',index=321)
+        pp.create_transformer(net,321,320,std_type="63 MVA 110/20 kV")
+        pp.create_line(net,321,node,length_km=len_con,std_type="490-AL1/64-ST1A 380.0") #generator at bus 320
+        T = True #say if a transformer was needed or not
     pp.runpp(net)
-    return isThereViolation(net,plot=plot),len_con
+    return isThereViolation(net,plot=plot),len_con,T
 
     #Change the problematic component (for now just lines)
 def ChangeComp(net,id_node,id_line,id_trafo, pmw_gen=10,plot=True):
@@ -101,7 +108,7 @@ def ChangeComp(net,id_node,id_line,id_trafo, pmw_gen=10,plot=True):
         fromb,tob,lenb = network.line['from_bus'][l],network.line['to_bus'][l],network.line['length_km'][l] #extract data
         network.line = network.line.drop(l) #drop the problematic line
         pp.create_line(net,fromb,tob,length_km=lenb,std_type="490-AL1/64-ST1A 380.0",index=l) #replace it
-    Tr = [114,142]
+    Tr = [114,142,143]
     for t in id_trafo:
         fromb,tob = network.trafo['hv_bus'][Tr[t]],network.trafo['lv_bus'][Tr[t]] #extract data
         network.trafo = network.trafo.drop(Tr[t]) #drop the problematic trafo
@@ -129,18 +136,20 @@ def MaxPow(net, p_min = 0, p_max = 30,N=100):
 #"Optimisation" functions
     #Function to calculate the max power achievable for all node connexions
     # Create a simple line, not a transformer
-def MaxPowWithoutProb(net,p_max=25,p_max2=50):
+def MaxPowWithoutProb(net,p_max=25):
     MAX = []
     for j,i in enumerate(net.bus.index[:179]): #avoid doing the calculation with gen connected to himself
         net = Init()
-        ConnexionGen(net,i,plot=False)
-        MAX.append([MaxPow(net,p_max=p_max),i])
+        _,lenl,T = ConnexionGen(net,i,plot=False)
+        MAX.append([i,MaxPow(net,p_max=p_max),lenl,T])
         if j%int(len(net.bus.index)/4)==0: #plot the advancement of the function every 25%
             print(f'{j/len(net.bus.index)*100}%')
-    for i,k in [(maxi[1],i) for i,maxi in enumerate(MAX) if maxi[0]==p_max]: #divide to avoid divergence for low gen capacity node connexions
-        net = Init()
-        ConnexionGen(net,i,plot=False)
-        MAX[k][0]=MaxPow(net,p_max=p_max2)
+    while [(maxi[0],i) for i,maxi in enumerate(MAX) if maxi[1]==p_max] !=[]: #divide loop to avoid divergence for low gen capacity node connexions
+        for k,i in [(i,maxi[0]) for i,maxi in enumerate(MAX) if maxi[1]==p_max]:
+            net = Init()
+            ConnexionGen(net,i,plot=False)
+            MAX[k][1]=MaxPow(net,p_max=p_max+10)
+        p_max+=10
     return MAX
 
 #-------------END FUNCTIONS-----------
@@ -155,17 +164,17 @@ print(network)
 pandapower.plotting.simple_plot(network);
 
 # Exemple with problem
-network = Init(pmw_gen = 30)
+network = Init(pmw_gen = 33)
 pp.runpp(network)
-PB,length = ConnexionGen(network,319);print(f'Length = {length}km ; Pb_bus={PB[1]} ; Pb_line={PB[2]} ; Pb_trafo={PB[3]}')
+PB,length,T = ConnexionGen(network,126);print(f'Length = {length}km ; Pb_bus={PB[1]} ; Pb_line={PB[2]} ; Pb_trafo={PB[3]} ; Transfo installed? = {T}' )
 maxg = MaxPow(network,p_max=100); print(f'Max gen power = {maxg}')
 
 #Exemple of change trafo
 PB = ChangeComp(network,PB[1],PB[2],PB[3],pmw_gen=35);print(f'Pb_bus={PB[1]} ; Pb_line={PB[2]} ; Pb_trafo={PB[3]}')
-maxg = MaxPow(network,p_max = 40); print(f'Max gen power = {maxg}')
+maxg = MaxPow(network,p_max = 35); print(f'Max gen power = {maxg}')
 
-#Calculate the max Power for each connexion without changin anything
-# MAX = MaxPowWithoutProb(network)
-# [MAX[i] for i in range(0,179) if MAX[i][0]>18]
+#MAX = MaxPowWithoutProb(network)
+# print([MAX[i] for i in range(0,179) if MAX[i][1]>25])
 # MaxGen = pd.DataFrame(data = MAX)
+# MaxGen.columns = ['Bus connected','MaxPower','Length','Trafo added']
 # MaxGen.to_excel('Max_gen_oberrhein.xlsx') #save the datas
